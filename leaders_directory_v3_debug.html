@@ -1,0 +1,783 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaders Directory v3 - BYU Ward Management</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+    <style>
+        .member-card {
+            transition: transform 0.2s, shadow 0.2s;
+        }
+        .member-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+        .member-photo {
+            width: 180px;
+            height: 180px;
+            object-fit: cover;
+        }
+        .profile-photo {
+            width: 200px;
+            height: 200px;
+            object-fit: cover;
+        }
+        .interest-bar {
+            transition: width 0.3s ease;
+        }
+        .debug-panel {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .loading-spinner {
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #3498db;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 20px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .fade-in {
+            animation: fadeIn 0.5s ease-in;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        .back-to-top {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+
+    <!-- Header -->
+    <header class="bg-blue-600 text-white shadow-lg">
+        <div class="container mx-auto px-4 py-6">
+            <div class="flex justify-between items-center">
+                <div>
+                    <h1 class="text-3xl font-bold">Leaders Directory</h1>
+                    <p class="text-blue-100 mt-1">BYU Ward Member Management</p>
+                </div>
+                <div class="flex space-x-4">
+                    <button id="debugToggle" class="bg-blue-700 hover:bg-blue-800 px-4 py-2 rounded-lg transition duration-200">
+                        <i class="fas fa-bug mr-2"></i>Debug
+                    </button>
+                    <button id="exportBtn" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded-lg transition duration-200" disabled>
+                        <i class="fas fa-download mr-2"></i>Export CSV
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Debug Panel -->
+    <div id="debugPanel" class="bg-gray-900 text-green-400 px-4 py-3 hidden">
+        <div class="container mx-auto">
+            <div class="flex justify-between items-center mb-2">
+                <h3 class="font-bold">Debug Information</h3>
+                <button id="clearDebug" class="text-xs bg-gray-700 hover:bg-gray-600 px-2 py-1 rounded">Clear</button>
+            </div>
+            <div id="debugOutput" class="debug-panel text-xs font-mono"></div>
+        </div>
+    </div>
+
+    <!-- Loading/Error States -->
+    <div id="loadingState" class="container mx-auto px-4 py-8">
+        <div class="text-center">
+            <div class="loading-spinner"></div>
+            <p class="text-gray-600 mt-4">Loading member data...</p>
+            <div id="loadingStatus" class="text-sm text-blue-600 mt-2"></div>
+        </div>
+    </div>
+
+    <div id="errorState" class="container mx-auto px-4 py-8 hidden">
+        <div class="bg-red-50 border border-red-200 rounded-lg p-6 text-center">
+            <div class="text-red-600 mb-4">
+                <i class="fas fa-exclamation-triangle text-4xl mb-4"></i>
+                <h3 class="text-xl font-bold mb-2">Error Loading Data</h3>
+                <p id="errorMessage" class="mb-4">Failed to fetch member data</p>
+            </div>
+            <button id="retryBtn" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg transition duration-200">
+                <i class="fas fa-redo mr-2"></i>Retry
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div id="mainContent" class="hidden fade-in">
+        <!-- Controls -->
+        <div class="container mx-auto px-4 py-6">
+            <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                    <!-- Search -->
+                    <div class="lg:col-span-2">
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Search Members</label>
+                        <div class="relative">
+                            <input type="text" id="searchInput" placeholder="Search by name, location, major..." 
+                                   class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+                        </div>
+                    </div>
+
+                    <!-- Sort -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
+                        <select id="sortSelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500">
+                            <option value="lastName">Last Name</option>
+                            <option value="firstName">First Name</option>
+                            <option value="building">Building → Room</option>
+                        </select>
+                    </div>
+
+                    <!-- Results Count -->
+                    <div class="flex items-end">
+                        <div class="text-sm text-gray-600">
+                            <span id="resultsCount">0</span> members found
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Filters -->
+                <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+                        <select id="genderFilter" class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500">
+                            <option value="">All</option>
+                            <option value="M">Male</option>
+                            <option value="F">Female</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Building</label>
+                        <select id="buildingFilter" class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500">
+                            <option value="">All Buildings</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Year</label>
+                        <select id="yearFilter" class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500">
+                            <option value="">All Years</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Major</label>
+                        <select id="majorFilter" class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500">
+                            <option value="">All Majors</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Has Car</label>
+                        <select id="carFilter" class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500">
+                            <option value="">All</option>
+                            <option value="Yes">Yes</option>
+                            <option value="No">No</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">RM Status</label>
+                        <select id="rmFilter" class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500">
+                            <option value="">All</option>
+                            <option value="Yes">Returned Missionary</option>
+                            <option value="No">Not RM</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Updated At -->
+            <div class="text-center text-sm text-gray-500 mb-6">
+                Last updated: <span id="updatedAt">—</span>
+            </div>
+
+            <!-- Members Grid -->
+            <div id="membersGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                <!-- Member cards will be inserted here -->
+            </div>
+        </div>
+    </div>
+
+    <!-- Member Detail Modal -->
+    <div id="memberModal" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden overflow-y-auto">
+        <div class="flex items-start justify-center min-h-screen pt-4 px-4 pb-20">
+            <div class="bg-white rounded-lg shadow-xl max-w-4xl w-full mx-auto">
+                <div class="p-6">
+                    <!-- Modal Header -->
+                    <div class="flex justify-between items-start mb-6">
+                        <div class="flex items-center space-x-4">
+                            <img id="modalPhoto" src="" alt="" class="profile-photo rounded-lg shadow-md bg-gray-200">
+                            <div>
+                                <h2 id="modalName" class="text-2xl font-bold text-gray-900"></h2>
+                                <p id="modalLocation" class="text-gray-600"></p>
+                                <p id="modalBuilding" class="text-gray-600"></p>
+                                <p id="modalYearMajor" class="text-gray-600"></p>
+                            </div>
+                        </div>
+                        <button id="closeModal" class="text-gray-400 hover:text-gray-600 text-2xl">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+
+                    <!-- Contact Actions -->
+                    <div class="grid grid-cols-3 gap-4 mb-6">
+                        <a id="modalCall" href="" class="flex items-center justify-center bg-green-600 hover:bg-green-700 text-white py-3 px-4 rounded-lg transition duration-200">
+                            <i class="fas fa-phone mr-2"></i>Call
+                        </a>
+                        <a id="modalSMS" href="" class="flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white py-3 px-4 rounded-lg transition duration-200">
+                            <i class="fas fa-sms mr-2"></i>Text
+                        </a>
+                        <a id="modalEmail" href="" class="flex items-center justify-center bg-red-600 hover:bg-red-700 text-white py-3 px-4 rounded-lg transition duration-200">
+                            <i class="fas fa-envelope mr-2"></i>Email
+                        </a>
+                    </div>
+
+                    <!-- Member Details -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <!-- Left Column -->
+                        <div class="space-y-6">
+                            <!-- Interest Levels -->
+                            <div class="bg-gray-50 rounded-lg p-4">
+                                <h3 class="text-lg font-semibold mb-4 text-gray-800">Interest Levels</h3>
+                                <div id="modalInterests" class="space-y-3">
+                                    <!-- Interest bars will be inserted here -->
+                                </div>
+                            </div>
+
+                            <!-- Additional Information -->
+                            <div class="bg-gray-50 rounded-lg p-4">
+                                <h3 class="text-lg font-semibold mb-4 text-gray-800">Additional Information</h3>
+                                <div id="modalAdditionalInfo" class="space-y-4">
+                                    <!-- Additional info will be inserted here -->
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Right Column -->
+                        <div class="space-y-6">
+                            <!-- All Fields -->
+                            <div class="bg-gray-50 rounded-lg p-4">
+                                <h3 class="text-lg font-semibold mb-4 text-gray-800">Complete Profile</h3>
+                                <div id="modalAllFields" class="space-y-2 text-sm">
+                                    <!-- All fields will be inserted here -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Back to Top Button -->
+    <button id="backToTop" class="back-to-top bg-blue-600 hover:bg-blue-700 text-white p-3 rounded-full shadow-lg hidden transition duration-200">
+        <i class="fas fa-arrow-up"></i>
+    </button>
+
+    <script>
+        class LeadersDirectory {
+            constructor() {
+                this.apiUrl = 'https://script.google.com/macros/s/AKfycbyt0Ufpq4naR9BzTxEQ40vCOI30OFI3M6CpPnkAMV49IYxcnVw6qZm2GEoavE-lX3S3/exec?role=leaders';
+                this.members = [];
+                this.filteredMembers = [];
+                this.columns = null;
+                this.isLoading = false;
+                this.debug = false;
+                
+                this.init();
+            }
+
+            init() {
+                this.setupEventListeners();
+                this.loadData();
+            }
+
+            setupEventListeners() {
+                // Debug toggle
+                document.getElementById('debugToggle').addEventListener('click', () => {
+                    this.debug = !this.debug;
+                    document.getElementById('debugPanel').classList.toggle('hidden', !this.debug);
+                });
+
+                // Clear debug
+                document.getElementById('clearDebug').addEventListener('click', () => {
+                    document.getElementById('debugOutput').innerHTML = '';
+                });
+
+                // Retry button
+                document.getElementById('retryBtn').addEventListener('click', () => {
+                    this.loadData();
+                });
+
+                // Search and filters
+                document.getElementById('searchInput').addEventListener('input', () => this.applyFilters());
+                document.getElementById('sortSelect').addEventListener('change', () => this.applyFilters());
+                document.getElementById('genderFilter').addEventListener('change', () => this.applyFilters());
+                document.getElementById('buildingFilter').addEventListener('change', () => this.applyFilters());
+                document.getElementById('yearFilter').addEventListener('change', () => this.applyFilters());
+                document.getElementById('majorFilter').addEventListener('change', () => this.applyFilters());
+                document.getElementById('carFilter').addEventListener('change', () => this.applyFilters());
+                document.getElementById('rmFilter').addEventListener('change', () => this.applyFilters());
+
+                // Export
+                document.getElementById('exportBtn').addEventListener('click', () => this.exportCSV());
+
+                // Modal
+                document.getElementById('closeModal').addEventListener('click', () => this.closeModal());
+                document.getElementById('memberModal').addEventListener('click', (e) => {
+                    if (e.target.id === 'memberModal') this.closeModal();
+                });
+
+                // Back to top
+                document.getElementById('backToTop').addEventListener('click', () => {
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                });
+
+                window.addEventListener('scroll', () => {
+                    const backToTop = document.getElementById('backToTop');
+                    backToTop.classList.toggle('hidden', window.scrollY < 300);
+                });
+
+                // Keyboard shortcuts
+                document.addEventListener('keydown', (e) => {
+                    if (e.key === 'Escape') this.closeModal();
+                    if (e.key === '/' && !e.target.matches('input, textarea')) {
+                        e.preventDefault();
+                        document.getElementById('searchInput').focus();
+                    }
+                });
+            }
+
+            log(message, type = 'info') {
+                const timestamp = new Date().toLocaleTimeString();
+                const icon = type === 'error' ? '❌' : type === 'success' ? '✅' : 'ℹ️';
+                const output = document.getElementById('debugOutput');
+                output.innerHTML += `<div class="${type === 'error' ? 'text-red-400' : type === 'success' ? 'text-green-400' : ''}">[${timestamp}] ${icon} ${message}</div>`;
+                output.scrollTop = output.scrollHeight;
+                console.log(`[LeadersDirectory] ${message}`);
+            }
+
+            async loadData() {
+                if (this.isLoading) return;
+                this.isLoading = true;
+
+                this.showLoading();
+                this.log('Starting data load...');
+
+                try {
+                    const data = await this.fetchWithFallbacks();
+                    this.processData(data);
+                    this.setupFilters();
+                    this.applyFilters();
+                    this.showContent();
+                    this.log('Data loaded successfully', 'success');
+                } catch (error) {
+                    this.log(`Failed to load data: ${error.message}`, 'error');
+                    this.showError(error.message);
+                } finally {
+                    this.isLoading = false;
+                }
+            }
+
+            async fetchWithFallbacks() {
+                const methods = [
+                    () => this.directFetch(),
+                    () => this.proxyFetch('https://corsproxy.io/?'),
+                    () => this.proxyFetch('https://cors-anywhere.herokuapp.com/'),
+                    () => this.proxyFetch('https://api.allorigins.win/raw?url='),
+                ];
+
+                for (let i = 0; i < methods.length; i++) {
+                    try {
+                        this.log(`Attempting method ${i + 1}/${methods.length}...`);
+                        this.updateLoadingStatus(`Trying connection method ${i + 1}...`);
+                        
+                        const data = await methods[i]();
+                        this.log(`Method ${i + 1} successful`, 'success');
+                        return data;
+                    } catch (error) {
+                        this.log(`Method ${i + 1} failed: ${error.message}`, 'error');
+                        
+                        if (i === methods.length - 1) {
+                            throw new Error('All connection methods failed');
+                        }
+                    }
+                }
+            }
+
+            async directFetch() {
+                const url = `${this.apiUrl}&t=${Date.now()}`;
+                const response = await fetch(url, {
+                    method: 'GET',
+                    headers: {
+                        'Accept': 'application/json',
+                        'Content-Type': 'application/json',
+                    },
+                    cache: 'no-store'
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                return await response.json();
+            }
+
+            async proxyFetch(proxyUrl) {
+                const url = `${proxyUrl}${encodeURIComponent(this.apiUrl)}&t=${Date.now()}`;
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error(`Proxy request failed: ${response.status}`);
+                }
+                
+                return await response.json();
+            }
+
+            processData(data) {
+                this.log(`Processing data version: ${data.version || 'unknown'}`);
+                
+                if (!data.members || !Array.isArray(data.members)) {
+                    throw new Error('Invalid data structure: missing members array');
+                }
+
+                if (!data.columns || !data.columns.clean) {
+                    throw new Error('Invalid data structure: missing columns metadata');
+                }
+
+                this.members = data.members;
+                this.columns = data.columns;
+                
+                // Set updated timestamp
+                if (data.updatedAt) {
+                    const updatedDate = new Date(data.updatedAt);
+                    document.getElementById('updatedAt').textContent = updatedDate.toLocaleString();
+                }
+
+                this.log(`Processed ${this.members.length} members`);
+            }
+
+            setupFilters() {
+                const buildings = [...new Set(this.members.map(m => m.Building).filter(Boolean))].sort();
+                const years = [...new Set(this.members.map(m => m.Year).filter(Boolean))].sort();
+                const majors = [...new Set(this.members.map(m => m.Major).filter(Boolean))].sort();
+
+                this.populateSelect('buildingFilter', buildings);
+                this.populateSelect('yearFilter', years);
+                this.populateSelect('majorFilter', majors);
+            }
+
+            populateSelect(selectId, options) {
+                const select = document.getElementById(selectId);
+                const currentValue = select.value;
+                
+                // Keep existing options, add new ones
+                const existingOptions = Array.from(select.options).slice(1).map(opt => opt.value);
+                const newOptions = options.filter(opt => !existingOptions.includes(opt));
+                
+                newOptions.forEach(option => {
+                    const optionElement = document.createElement('option');
+                    optionElement.value = option;
+                    optionElement.textContent = option;
+                    select.appendChild(optionElement);
+                });
+                
+                select.value = currentValue;
+            }
+
+            applyFilters() {
+                const searchTerm = document.getElementById('searchInput').value.toLowerCase();
+                const genderFilter = document.getElementById('genderFilter').value;
+                const buildingFilter = document.getElementById('buildingFilter').value;
+                const yearFilter = document.getElementById('yearFilter').value;
+                const majorFilter = document.getElementById('majorFilter').value;
+                const carFilter = document.getElementById('carFilter').value;
+                const rmFilter = document.getElementById('rmFilter').value;
+                const sortBy = document.getElementById('sortSelect').value;
+
+                this.filteredMembers = this.members.filter(member => {
+                    // Search filter
+                    if (searchTerm && !member.Search?.toLowerCase().includes(searchTerm)) {
+                        return false;
+                    }
+
+                    // Other filters
+                    if (genderFilter && member.Gender !== genderFilter) return false;
+                    if (buildingFilter && member.Building !== buildingFilter) return false;
+                    if (yearFilter && member.Year !== yearFilter) return false;
+                    if (majorFilter && member.Major !== majorFilter) return false;
+                    
+                    // Car filter
+                    if (carFilter) {
+                        const hasCar = this.getFieldValue(member, 'Will you have a car while attending school?');
+                        if (carFilter !== hasCar) return false;
+                    }
+
+                    // RM filter
+                    if (rmFilter) {
+                        const isRM = this.getFieldValue(member, 'Returned missionary?');
+                        if (rmFilter !== isRM) return false;
+                    }
+
+                    return true;
+                });
+
+                // Sort
+                this.sortMembers(sortBy);
+                
+                // Update display
+                this.renderMembers();
+                document.getElementById('resultsCount').textContent = this.filteredMembers.length;
+                
+                // Enable export if we have data
+                document.getElementById('exportBtn').disabled = this.filteredMembers.length === 0;
+            }
+
+            sortMembers(sortBy) {
+                this.filteredMembers.sort((a, b) => {
+                    switch (sortBy) {
+                        case 'firstName':
+                            return a.FirstName.localeCompare(b.FirstName);
+                        case 'building':
+                            const buildingCompare = (a.Building || '').localeCompare(b.Building || '');
+                            if (buildingCompare !== 0) return buildingCompare;
+                            return (a.Room || '').localeCompare(b.Room || '');
+                        default: // lastName
+                            return a.LastName.localeCompare(b.LastName);
+                    }
+                });
+            }
+
+            renderMembers() {
+                const grid = document.getElementById('membersGrid');
+                
+                if (this.filteredMembers.length === 0) {
+                    grid.innerHTML = '<div class="col-span-full text-center py-12 text-gray-500">No members found matching your criteria.</div>';
+                    return;
+                }
+
+                grid.innerHTML = this.filteredMembers.map(member => this.createMemberCard(member)).join('');
+            }
+
+            createMemberCard(member) {
+                const hasCar = this.getFieldValue(member, 'Will you have a car while attending school?') === 'Yes';
+                const isRM = this.getFieldValue(member, 'Returned missionary?') === 'Yes';
+                
+                return `
+                    <div class="member-card bg-white rounded-lg shadow-md overflow-hidden cursor-pointer hover:shadow-lg" 
+                         onclick="app.openMemberDetail('${member.MemberID}')">
+                        <div class="p-4 text-center">
+                            <div class="mb-4 flex justify-center">
+                                <img src="${member.PhotoUrl || 'https://via.placeholder.com/180x180?text=No+Photo'}" 
+                                     alt="${member.PreferredName}" 
+                                     class="member-photo rounded-lg shadow-sm bg-gray-200"
+                                     onerror="this.src='https://via.placeholder.com/180x180?text=No+Photo'">
+                            </div>
+                            <h3 class="text-lg font-semibold text-gray-900 mb-1">
+                                ${member.PreferredName || member.FirstName} ${member.LastName}
+                            </h3>
+                            <p class="text-sm text-gray-600 mb-1">${member.City}, ${member.State}</p>
+                            <p class="text-sm text-gray-600 mb-1">Building ${member.Building} • Room ${member.Room}</p>
+                            <p class="text-sm text-gray-600 mb-3">${member.Year} • ${member.Major}</p>
+                            
+                            <div class="flex justify-center space-x-4 text-xs">
+                                <div class="flex items-center ${hasCar ? 'text-green-600' : 'text-gray-400'}">
+                                    <i class="fas fa-car mr-1"></i>
+                                    <span>Has Car: ${hasCar ? 'Yes' : 'No'}</span>
+                                </div>
+                                <div class="flex items-center ${isRM ? 'text-blue-600' : 'text-gray-400'}">
+                                    <i class="fas fa-globe mr-1"></i>
+                                    <span>RM: ${isRM ? 'Yes' : 'No'}</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }
+
+            openMemberDetail(memberId) {
+                const member = this.members.find(m => m.MemberID === memberId);
+                if (!member) return;
+
+                // Set basic info
+                document.getElementById('modalPhoto').src = member.PhotoUrl || 'https://via.placeholder.com/200x200?text=No+Photo';
+                document.getElementById('modalName').textContent = `${member.PreferredName || member.FirstName} ${member.LastName}`;
+                document.getElementById('modalLocation').textContent = `${member.City}, ${member.State}`;
+                document.getElementById('modalBuilding').textContent = `Building ${member.Building} • Room ${member.Room}`;
+                document.getElementById('modalYearMajor').textContent = `${member.Year} • ${member.Major}`;
+
+                // Set contact links
+                document.getElementById('modalCall').href = `tel:${member.Phone}`;
+                document.getElementById('modalSMS').href = `sms:${member.Phone}`;
+                document.getElementById('modalEmail').href = `mailto:${member.Email}`;
+
+                // Render interests
+                this.renderInterests(member);
+
+                // Render additional info
+                this.renderAdditionalInfo(member);
+
+                // Render all fields
+                this.renderAllFields(member);
+
+                // Show modal
+                document.getElementById('memberModal').classList.remove('hidden');
+                document.body.style.overflow = 'hidden';
+            }
+
+            renderInterests(member) {
+                const container = document.getElementById('modalInterests');
+                const interests = member.LevelOfInterest || {};
+                
+                const interestNames = [
+                    'Leadership', 'Teaching', 'Service', 'Activities', 'Music',
+                    'Sports & athletics', 'Temple & family history', 
+                    'Communication & social media', 'Organization & project management', 'Computers & software'
+                ];
+
+                container.innerHTML = interestNames.map(name => {
+                    const level = interests[name] || 0;
+                    const percentage = (level / 5) * 100;
+                    
+                    return `
+                        <div>
+                            <div class="flex justify-between text-sm mb-1">
+                                <span class="font-medium">${name}</span>
+                                <span class="text-gray-600">${level}/5</span>
+                            </div>
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div class="interest-bar bg-blue-600 h-2 rounded-full" style="width: ${percentage}%"></div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            renderAdditionalInfo(member) {
+                const container = document.getElementById('modalAdditionalInfo');
+                const info = member.additionalInfo || {};
+                
+                container.innerHTML = Object.entries(info).map(([key, value]) => {
+                    if (!value) return '';
+                    
+                    return `
+                        <div>
+                            <h4 class="font-medium text-gray-800 mb-1">${key}</h4>
+                            <p class="text-gray-600 text-sm">${value}</p>
+                        </div>
+                    `;
+                }).filter(Boolean).join('');
+            }
+
+            renderAllFields(member) {
+                const container = document.getElementById('modalAllFields');
+                const fields = member.fieldsClean || {};
+                
+                // Skip certain fields that are displayed elsewhere
+                const skipFields = ['First Name', 'Last Name', 'Preferred First Name ("Maddy" vs. "Madeline" for example)', 
+                                  'City', 'State', 'Mobile Phone Number', 'E-Mail Address', 'Self-Portrait Photo',
+                                  'Timestamp', 'Bldg/Room'];
+                
+                container.innerHTML = this.columns.clean
+                    .filter(fieldName => !skipFields.includes(fieldName))
+                    .map(fieldName => {
+                        const value = fields[fieldName];
+                        const displayValue = value === null || value === undefined || value === '' ? '—' : value;
+                        
+                        return `
+                            <div class="flex justify-between py-1 border-b border-gray-100">
+                                <span class="font-medium text-gray-700 text-xs">${fieldName}:</span>
+                                <span class="text-gray-600 text-xs text-right ml-2">${displayValue}</span>
+                            </div>
+                        `;
+                    }).join('');
+            }
+
+            getFieldValue(member, fieldName) {
+                return member.fieldsClean?.[fieldName] || '—';
+            }
+
+            closeModal() {
+                document.getElementById('memberModal').classList.add('hidden');
+                document.body.style.overflow = 'auto';
+            }
+
+            exportCSV() {
+                if (this.filteredMembers.length === 0) return;
+
+                const headers = ['Name', 'Email', 'Phone', 'Location', 'Building/Room', 'Year', 'Major', 'Gender', 'Has Car', 'RM Status'];
+                const rows = this.filteredMembers.map(member => [
+                    `${member.PreferredName || member.FirstName} ${member.LastName}`,
+                    member.Email,
+                    member.Phone,
+                    `${member.City}, ${member.State}`,
+                    `Building ${member.Building}, Room ${member.Room}`,
+                    member.Year,
+                    member.Major,
+                    member.Gender,
+                    this.getFieldValue(member, 'Will you have a car while attending school?'),
+                    this.getFieldValue(member, 'Returned missionary?')
+                ]);
+
+                const csvContent = [headers, ...rows]
+                    .map(row => row.map(cell => `"${cell}"`).join(','))
+                    .join('\n');
+
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `leaders-directory-${new Date().toISOString().split('T')[0]}.csv`;
+                a.click();
+                window.URL.revokeObjectURL(url);
+
+                this.log('CSV exported successfully', 'success');
+            }
+
+            showLoading() {
+                document.getElementById('loadingState').classList.remove('hidden');
+                document.getElementById('errorState').classList.add('hidden');
+                document.getElementById('mainContent').classList.add('hidden');
+            }
+
+            showError(message) {
+                document.getElementById('errorMessage').textContent = message;
+                document.getElementById('loadingState').classList.add('hidden');
+                document.getElementById('errorState').classList.remove('hidden');
+                document.getElementById('mainContent').classList.add('hidden');
+            }
+
+            showContent() {
+                document.getElementById('loadingState').classList.add('hidden');
+                document.getElementById('errorState').classList.add('hidden');
+                document.getElementById('mainContent').classList.remove('hidden');
+            }
+
+            updateLoadingStatus(status) {
+                document.getElementById('loadingStatus').textContent = status;
+            }
+        }
+
+        // Initialize app
+        const app = new LeadersDirectory();
+    </script>
+</body>
+</html>
+    <script id="html_badge_script1">
+        window.__genspark_remove_badge_link = "https://www.genspark.ai/api/html_badge/" +
+            "remove_badge?token=To%2FBnjzloZ3UfQdcSaYfDkMNOtWXaQryBUUSgQN%2B%2BmrmRNzcP5eau8lvEtw%2BH905pKYLHkQpEfCyxCRAYHKH2gmJrHBcB8U9AEun3mgSP2uPs6rmbTkoZ54SmN34fNAWg2Dq7LGRMRujhrOaQndOYKMgjm0pujCG4ypde6jSvG5ftWT%2FxPyvx3pJsTpnqeCVci2cEp65HkQlb1kV1sRkuMfmKI0bUc3EwGmH55bEuaSCdI4wsx%2BYXJ7DNoBCAoOUxcwcgXRUODzLv6zMnLkr4xqk7W3IO3fHFnVp5JjYX8B1iHf4xrb7Z6XmTI6NIc8JTw3k0RpjzjIOyLgZfR5ZGGKNekOCInQ3VRsN4JKedlJ9hzEVkny5XMsXWr2drh0DEXlkFh%2BOgw2hcnSljEqiIzziMYzTqXkDZTfx8jOuojpKDxkWX4ycYgEJLnU0IxHszN3tuG0xvDs6vkUbFJmKIYoGR69rkDQ8Ts3HEQ6e%2B9QJHKxJKCoVgpODGi2plBw3he1aEh1p3TROo4PY8QX6vaDrVLqc0cN4RB9GBUBrdnk%3D";
+        window.__genspark_locale = "en-US";
+        window.__genspark_token = "To/BnjzloZ3UfQdcSaYfDkMNOtWXaQryBUUSgQN++mrmRNzcP5eau8lvEtw+H905pKYLHkQpEfCyxCRAYHKH2gmJrHBcB8U9AEun3mgSP2uPs6rmbTkoZ54SmN34fNAWg2Dq7LGRMRujhrOaQndOYKMgjm0pujCG4ypde6jSvG5ftWT/xPyvx3pJsTpnqeCVci2cEp65HkQlb1kV1sRkuMfmKI0bUc3EwGmH55bEuaSCdI4wsx+YXJ7DNoBCAoOUxcwcgXRUODzLv6zMnLkr4xqk7W3IO3fHFnVp5JjYX8B1iHf4xrb7Z6XmTI6NIc8JTw3k0RpjzjIOyLgZfR5ZGGKNekOCInQ3VRsN4JKedlJ9hzEVkny5XMsXWr2drh0DEXlkFh+Ogw2hcnSljEqiIzziMYzTqXkDZTfx8jOuojpKDxkWX4ycYgEJLnU0IxHszN3tuG0xvDs6vkUbFJmKIYoGR69rkDQ8Ts3HEQ6e+9QJHKxJKCoVgpODGi2plBw3he1aEh1p3TROo4PY8QX6vaDrVLqc0cN4RB9GBUBrdnk=";
+    </script>
+    
+    <script id="html_notice_dialog_script" src="https://www.genspark.ai/notice_dialog.js"></script>
+    
