@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leaders Directory - BYU Ward Management</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
+    <style>
+        .member-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .member-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+        }
+        .member-photo {
+            width: 180px;
+            height: 180px;
+            object-fit: cover;
+            border-radius: 12px;
+        }
+        .loading-spinner {
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+        .interest-bar {
+            height: 6px;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+        .modal {
+            backdrop-filter: blur(5px);
+        }
+        .profile-photo {
+            width: 200px;
+            height: 200px;
+            object-fit: cover;
+            border-radius: 16px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-white shadow-sm border-b">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
+            <div class="flex justify-between items-center">
+                <h1 class="text-2xl font-bold text-gray-900">
+                    <i class="fas fa-users text-blue-600 mr-2"></i>
+                    Leaders Directory
+                </h1>
+                <div class="flex items-center space-x-4">
+                    <span id="lastUpdated" class="text-sm text-gray-500"></span>
+                    <button id="exportBtn" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg text-sm">
+                        <i class="fas fa-download mr-2"></i>Export CSV
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- Loading State -->
+    <div id="loadingState" class="flex items-center justify-center py-20">
+        <div class="text-center">
+            <div class="loading-spinner inline-block w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full mb-4"></div>
+            <p class="text-gray-600">Loading member data...</p>
+        </div>
+    </div>
+
+    <!-- Error State -->
+    <div id="errorState" class="hidden max-w-4xl mx-auto px-4 py-8">
+        <div class="bg-red-50 border border-red-200 rounded-lg p-6">
+            <div class="flex items-center mb-4">
+                <i class="fas fa-exclamation-triangle text-red-500 mr-3"></i>
+                <h3 class="text-lg font-semibold text-red-800">Error Loading Data</h3>
+            </div>
+            <p class="text-red-700 mb-4" id="errorMessage">Failed to fetch</p>
+            <button id="retryBtn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg">
+                <i class="fas fa-redo mr-2"></i>Retry
+            </button>
+        </div>
+    </div>
+
+    <!-- Main Content -->
+    <div id="mainContent" class="hidden max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <!-- Controls -->
+        <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                <!-- Search -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Search</label>
+                    <div class="relative">
+                        <input type="text" id="searchInput" 
+                               class="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                               placeholder="Search members...">
+                        <i class="fas fa-search absolute left-3 top-3 text-gray-400"></i>
+                    </div>
+                </div>
+
+                <!-- Gender Filter -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Gender</label>
+                    <select id="genderFilter" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="">All</option>
+                        <option value="M">Male</option>
+                        <option value="F">Female</option>
+                    </select>
+                </div>
+
+                <!-- Building Filter -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Building</label>
+                    <select id="buildingFilter" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="">All Buildings</option>
+                    </select>
+                </div>
+
+                <!-- Year Filter -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Year</label>
+                    <select id="yearFilter" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="">All Years</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- Major Filter -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Major</label>
+                    <select id="majorFilter" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="">All Majors</option>
+                    </select>
+                </div>
+
+                <!-- Sort -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Sort By</label>
+                    <select id="sortSelect" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="lastName">Last Name</option>
+                        <option value="firstName">First Name</option>
+                        <option value="building">Building → Room</option>
+                    </select>
+                </div>
+
+                <!-- Interests Filter -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">High Interest Areas</label>
+                    <select id="interestFilter" class="w-full p-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                        <option value="">All Members</option>
+                        <option value="Leadership">Leadership (≥3)</option>
+                        <option value="Teaching">Teaching (≥3)</option>
+                        <option value="Service">Service (≥3)</option>
+                        <option value="Activities">Activities (≥3)</option>
+                        <option value="Music">Music (≥3)</option>
+                        <option value="Sports & athletics">Sports & Athletics (≥3)</option>
+                        <option value="Temple & family history">Temple & Family History (≥3)</option>
+                        <option value="Communication & social media">Communication & Social Media (≥3)</option>
+                        <option value="Organization & project management">Organization & Project Management (≥3)</option>
+                        <option value="Computers & software">Computers & Software (≥3)</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Results Count -->
+        <div class="mb-4">
+            <p class="text-gray-600">
+                Showing <span id="resultCount" class="font-semibold">0</span> members
+            </p>
+        </div>
+
+        <!-- Member Grid -->
+        <div id="memberGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+            <!-- Member cards will be inserted here -->
+        </div>
+    </div>
+
+    <!-- Member Detail Modal -->
+    <div id="memberModal" class="fixed inset-0 bg-black bg-opacity-50 modal hidden z-50">
+        <div class="flex items-center justify-center min-h-screen p-4">
+            <div class="bg-white rounded-lg max-w-4xl w-full max-h-screen overflow-y-auto">
+                <div class="p-6">
+                    <!-- Modal Header -->
+                    <div class="flex justify-between items-start mb-6">
+                        <div class="flex items-center space-x-6">
+                            <img id="modalPhoto" src="" alt="" class="profile-photo">
+                            <div>
+                                <h2 id="modalName" class="text-3xl font-bold text-gray-900 mb-2"></h2>
+                                <p id="modalLocation" class="text-lg text-gray-600 mb-1"></p>
+                                <p id="modalRoom" class="text-lg text-gray-600 mb-1"></p>
+                                <p id="modalYear" class="text-lg text-gray-600"></p>
+                            </div>
+                        </div>
+                        <button id="closeModal" class="text-gray-400 hover:text-gray-600">
+                            <i class="fas fa-times text-2xl"></i>
+                        </button>
+                    </div>
+
+                    <!-- Contact Actions -->
+                    <div class="flex flex-wrap gap-3 mb-6">
+                        <a id="callBtn" href="" class="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg">
+                            <i class="fas fa-phone mr-2"></i>Call
+                        </a>
+                        <a id="smsBtn" href="" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg">
+                            <i class="fas fa-sms mr-2"></i>SMS
+                        </a>
+                        <a id="emailBtn" href="" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg">
+                            <i class="fas fa-envelope mr-2"></i>Email
+                        </a>
+                    </div>
+
+                    <!-- Interest Levels -->
+                    <div class="mb-6">
+                        <h3 class="text-xl font-semibold text-gray-900 mb-4">Interest & Experience Levels</h3>
+                        <div id="interestBars" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <!-- Interest bars will be inserted here -->
+                        </div>
+                    </div>
+
+                    <!-- Additional Information -->
+                    <div>
+                        <h3 class="text-xl font-semibold text-gray-900 mb-4">Additional Information</h3>
+                        <div id="additionalInfo" class="space-y-4">
+                            <!-- Additional info will be inserted here -->
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let allMembers = [];
+        let filteredMembers = [];
+        const API_URL = 'https://script.google.com/macros/s/AKfycbyt0Ufpq4naR9BzTxEQ40vCOI30OFI3M6CpPnkAMV49IYxcnVw6qZm2GEoavE-lX3S3/exec?role=leaders';
+
+        // CORS Proxy URLs for fallback
+        const PROXY_URLS = [
+            'https://api.allorigins.win/raw?url=',
+            'https://cors-anywhere.herokuapp.com/',
+            'https://api.codetabs.com/v1/proxy?quest='
+        ];
+
+        // DOM Elements
+        const loadingState = document.getElementById('loadingState');
+        const errorState = document.getElementById('errorState');
+        const mainContent = document.getElementById('mainContent');
+        const memberGrid = document.getElementById('memberGrid');
+        const searchInput = document.getElementById('searchInput');
+        const genderFilter = document.getElementById('genderFilter');
+        const buildingFilter = document.getElementById('buildingFilter');
+        const yearFilter = document.getElementById('yearFilter');
+        const majorFilter = document.getElementById('majorFilter');
+        const sortSelect = document.getElementById('sortSelect');
+        const interestFilter = document.getElementById('interestFilter');
+        const resultCount = document.getElementById('resultCount');
+        const lastUpdated = document.getElementById('lastUpdated');
+        const memberModal = document.getElementById('memberModal');
+
+        // Fetch data with CORS handling
+        async function fetchMemberData() {
+            const methods = [
+                // Direct fetch
+                () => fetch(API_URL + '&t=' + Date.now()),
+                // CORS proxies
+                ...PROXY_URLS.map(proxy => () => fetch(proxy + encodeURIComponent(API_URL + '&t=' + Date.now()))),
+                // JSONP fallback
+                () => fetchWithJSONP(API_URL + '&callback=handleMemberData&t=' + Date.now())
+            ];
+
+            for (let i = 0; i < methods.length; i++) {
+                try {
+                    console.log(`Attempting fetch method ${i + 1}...`);
+                    const response = await methods[i]();
+                    
+                    if (response && response.ok) {
+                        const data = await response.json();
+                        if (data && data.members) {
+                            console.log('Successfully fetched data');
+                            return data;
+                        }
+                    }
+                } catch (error) {
+                    console.warn(`Fetch method ${i + 1} failed:`, error);
+                    if (i === methods.length - 1) {
+                        throw new Error('All fetch methods failed');
+                    }
+                }
+            }
+        }
+
+        // JSONP fallback
+        function fetchWithJSONP(url) {
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                const callbackName = 'jsonp_callback_' + Math.round(100000 * Math.random());
+                
+                window[callbackName] = function(data) {
+                    delete window[callbackName];
+                    document.body.removeChild(script);
+                    resolve({ ok: true, json: () => Promise.resolve(data) });
+                };
+                
+                script.src = url.replace('callback=handleMemberData', `callback=${callbackName}`);
+                script.onerror = () => {
+                    delete window[callbackName];
+                    document.body.removeChild(script);
+                    reject(new Error('JSONP failed'));
+                };
+                
+                document.body.appendChild(script);
+                
+                setTimeout(() => {
+                    if (window[callbackName]) {
+                        delete window[callbackName];
+                        document.body.removeChild(script);
+                        reject(new Error('JSONP timeout'));
+                    }
+                }, 10000);
+            });
+        }
+
+        // Initialize app
+        async function initApp() {
+            try {
+                showLoading();
+                const data = await fetchMemberData();
+                allMembers = data.members;
+                
+                // Update last updated time
+                if (data.updatedAt) {
+                    const date = new Date(data.updatedAt);
+                    lastUpdated.textContent = `Last updated: ${date.toLocaleString()}`;
+                }
+                
+                populateFilters();
+                filterAndDisplayMembers();
+                showMainContent();
+                
+            } catch (error) {
+                console.error('Failed to load data:', error);
+                showError(error.message);
+            }
+        }
+
+        // UI State Management
+        function showLoading() {
+            loadingState.classList.remove('hidden');
+            errorState.classList.add('hidden');
+            mainContent.classList.add('hidden');
+        }
+
+        function showError(message) {
+            errorState.classList.remove('hidden');
+            loadingState.classList.add('hidden');
+            mainContent.classList.add('hidden');
+            document.getElementById('errorMessage').textContent = message;
+        }
+
+        function showMainContent() {
+            mainContent.classList.remove('hidden');
+            loadingState.classList.add('hidden');
+            errorState.classList.add('hidden');
+        }
+
+        // Populate filter dropdowns
+        function populateFilters() {
+            const buildings = [...new Set(allMembers.map(m => m.Building).filter(b => b))].sort();
+            const years = [...new Set(allMembers.map(m => m.Year).filter(y => y))].sort();
+            const majors = [...new Set(allMembers.map(m => m.Major).filter(m => m))].sort();
+
+            // Populate building filter
+            buildingFilter.innerHTML = '<option value="">All Buildings</option>';
+            buildings.forEach(building => {
+                buildingFilter.innerHTML += `<option value="${building}">Building ${building}</option>`;
+            });
+
+            // Populate year filter
+            yearFilter.innerHTML = '<option value="">All Years</option>';
+            years.forEach(year => {
+                yearFilter.innerHTML += `<option value="${year}">${year}</option>`;
+            });
+
+            // Populate major filter
+            majorFilter.innerHTML = '<option value="">All Majors</option>';
+            majors.forEach(major => {
+                majorFilter.innerHTML += `<option value="${major}">${major}</option>`;
+            });
+        }
+
+        // Get member data with intelligent field mapping
+        function getMemberData(member, field) {
+            // Try additionalInfo first (most reliable)
+            if (member.additionalInfo && member.additionalInfo[field]) {
+                return member.additionalInfo[field];
+            }
+            
+            // Try fieldsClean
+            if (member.fieldsClean && member.fieldsClean[field]) {
+                return member.fieldsClean[field];
+            }
+            
+            // Try fieldsRaw
+            if (member.fieldsRaw && member.fieldsRaw[field]) {
+                return member.fieldsRaw[field];
+            }
+            
+            return null;
+        }
+
+        // Determine if member is returned missionary
+        function isReturnedMissionary(member) {
+            // Check for mission indicators in various fields
+            const missionIndicators = [
+                member.fieldsClean?.['If yes, where did you serve?'],
+                member.fieldsClean?.['Current priesthood office? (If applicable)'],
+                member.additionalInfo?.['If yes, where did you serve?']
+            ];
+            
+            return missionIndicators.some(indicator => 
+                indicator && 
+                typeof indicator === 'string' && 
+                (indicator.toLowerCase().includes('mission') || 
+                 indicator.toLowerCase().includes('served') ||
+                 indicator.toLowerCase().includes('brazil') ||
+                 indicator.toLowerCase().includes('elder') ||
+                 indicator.match(/[A-Z][a-z]+ [A-Z][a-z]+/)) // Pattern for "Brazil Porto Alegre"
+            );
+        }
+
+        // Determine if member has car
+        function hasCar(member) {
+            const carField = getMemberData(member, 'Will you have a car while attending school?');
+            if (carField) {
+                return carField.toLowerCase().includes('yes');
+            }
+            
+            // Check in fieldsClean for "Yes" responses
+            const cleanFields = member.fieldsClean || {};
+            for (const [key, value] of Object.entries(cleanFields)) {
+                if (key.toLowerCase().includes('car') && 
+                    typeof value === 'string' && 
+                    value.toLowerCase().includes('yes')) {
+                    return true;
+                }
+            }
+            
+            return false;
+        }
+
+        // Filter and display members
+        function filterAndDisplayMembers() {
+            filteredMembers = allMembers.filter(member => {
+                // Search filter
+                const searchTerm = searchInput.value.toLowerCase();
+                if (searchTerm && !member.Search.toLowerCase().includes(searchTerm)) {
+                    return false;
+                }
+
+                // Gender filter
+                if (genderFilter.value && member.Gender !== genderFilter.value) {
+                    return false;
+                }
+
+                // Building filter
+                if (buildingFilter.value && member.Building !== buildingFilter.value) {
+                    return false;
+                }
+
+                // Year filter
+                if (yearFilter.value && member.Year !== yearFilter.value) {
+                    return false;
+                }
+
+                // Major filter
+                if (majorFilter.value && member.Major !== majorFilter.value) {
+                    return false;
+                }
+
+                // Interest filter
+                if (interestFilter.value) {
+                    const interestArea = interestFilter.value;
+                    const level = member.LevelOfInterest?.[interestArea];
+                    if (!level || level < 3) {
+                        return false;
+                    }
+                }
+
+                return true;
+            });
+
+            // Sort members
+            const sortBy = sortSelect.value;
+            filteredMembers.sort((a, b) => {
+                switch (sortBy) {
+                    case 'firstName':
+                        return a.FirstName.localeCompare(b.FirstName);
+                    case 'building':
+                        if (a.Building !== b.Building) {
+                            return a.Building.localeCompare(b.Building);
+                        }
+                        return a.Room.localeCompare(b.Room);
+                    default: // lastName
+                        return a.LastName.localeCompare(b.LastName);
+                }
+            });
+
+            displayMembers();
+            resultCount.textContent = filteredMembers.length;
+        }
+
+        // Display member cards
+        function displayMembers() {
+            memberGrid.innerHTML = '';
+            
+            filteredMembers.forEach(member => {
+                const card = document.createElement('div');
+                card.className = 'member-card bg-white rounded-lg shadow-sm border p-6 hover:shadow-md';
+                card.dataset.memberId = member.MemberID;
+                
+                const photoUrl = member.PhotoUrl || 'https://via.placeholder.com/180x180/e5e7eb/9ca3af?text=No+Photo';
+                const returnedMissionary = isReturnedMissionary(member);
+                const hasCarStatus = hasCar(member);
+                
+                card.innerHTML = `
+                    <div class="text-center mb-4">
+                        <img src="${photoUrl}" alt="${member.PreferredName || member.FirstName}" 
+                             class="member-photo mx-auto mb-3" 
+                             onerror="this.src='https://via.placeholder.com/180x180/e5e7eb/9ca3af?text=No+Photo'">
+                        <h3 class="text-lg font-semibold text-gray-900 mb-1">
+                            ${member.PreferredName || member.FirstName} ${member.LastName}
+                        </h3>
+                        <p class="text-gray-600 text-sm">${member.Location}</p>
+                    </div>
+                    
+                    <div class="space-y-2 text-sm">
+                        <div class="flex justify-between">
+                            <span class="text-gray-500">Building/Room:</span>
+                            <span class="font-medium">${member.Building}/${member.Room}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-500">Year:</span>
+                            <span class="font-medium">${member.Year}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-500">Major:</span>
+                            <span class="font-medium">${member.Major}</span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-500">Has Car:</span>
+                            <span class="font-medium ${hasCarStatus ? 'text-green-600' : 'text-red-600'}">
+                                ${hasCarStatus ? 'Yes' : 'No'}
+                            </span>
+                        </div>
+                        <div class="flex justify-between">
+                            <span class="text-gray-500">RM:</span>
+                            <span class="font-medium ${returnedMissionary ? 'text-blue-600' : 'text-gray-500'}">
+                                ${returnedMissionary ? 'Yes' : 'No'}
+                            </span>
+                        </div>
+                    </div>
+                `;
+                
+                // Add click handler
+                card.addEventListener('click', () => showMemberDetail(member));
+                
+                memberGrid.appendChild(card);
+            });
+        }
+
+        // Show member detail modal
+        function showMemberDetail(member) {
+            const photoUrl = member.PhotoUrl || 'https://via.placeholder.com/200x200/e5e7eb/9ca3af?text=No+Photo';
+            
+            // Populate basic info
+            document.getElementById('modalPhoto').src = photoUrl;
+            document.getElementById('modalPhoto').onerror = function() {
+                this.src = 'https://via.placeholder.com/200x200/e5e7eb/9ca3af?text=No+Photo';
+            };
+            document.getElementById('modalName').textContent = 
+                `${member.PreferredName || member.FirstName} ${member.LastName}`;
+            document.getElementById('modalLocation').textContent = member.Location;
+            document.getElementById('modalRoom').textContent = `Building ${member.Building}, Room ${member.Room}`;
+            document.getElementById('modalYear').textContent = `${member.Year} • ${member.Major}`;
+            
+            // Set contact links
+            document.getElementById('callBtn').href = `tel:${member.Phone}`;
+            document.getElementById('smsBtn').href = `sms:${member.Phone}`;
+            document.getElementById('emailBtn').href = `mailto:${member.Email}`;
+            
+            // Display interest levels
+            const interestBars = document.getElementById('interestBars');
+            interestBars.innerHTML = '';
+            
+            if (member.LevelOfInterest) {
+                Object.entries(member.LevelOfInterest).forEach(([area, level]) => {
+                    const barContainer = document.createElement('div');
+                    barContainer.className = 'mb-3';
+                    
+                    const percentage = (level / 5) * 100;
+                    const colorClass = level >= 4 ? 'bg-green-500' : 
+                                     level >= 3 ? 'bg-yellow-500' : 'bg-gray-300';
+                    
+                    barContainer.innerHTML = `
+                        <div class="flex justify-between items-center mb-1">
+                            <span class="text-sm font-medium text-gray-700">${area}</span>
+                            <span class="text-sm font-semibold text-gray-900">${level}/5</span>
+                        </div>
+                        <div class="w-full bg-gray-200 rounded-full">
+                            <div class="interest-bar ${colorClass}" style="width: ${percentage}%"></div>
+                        </div>
+                    `;
+                    
+                    interestBars.appendChild(barContainer);
+                });
+            }
+            
+            // Display additional information
+            const additionalInfo = document.getElementById('additionalInfo');
+            additionalInfo.innerHTML = '';
+            
+            // Use additionalInfo section if available, otherwise use fieldsClean
+            const infoSource = member.additionalInfo || member.fieldsClean || {};
+            
+            const importantFields = [
+                'Why did you choose to attend BYU?',
+                'What personal spiritual goals would you like to accomplish this year at BYU?',
+                'Describe your past school and community involvement / extracurricular activities.',
+                'List your past church responsibilities.',
+                'Other interests, skills, and talents? Along with your hometown, year in school, and major, this will be shared in our ward directory.',
+                'Other comments'
+            ];
+            
+            importantFields.forEach(field => {
+                const value = infoSource[field];
+                if (value && typeof value === 'string' && value.trim() !== '') {
+                    const infoDiv = document.createElement('div');
+                    infoDiv.className = 'border-l-4 border-blue-500 pl-4 py-2';
+                    infoDiv.innerHTML = `
+                        <h4 class="font-semibold text-gray-900 mb-2">${field}</h4>
+                        <p class="text-gray-700 whitespace-pre-line">${value}</p>
+                    `;
+                    additionalInfo.appendChild(infoDiv);
+                }
+            });
+            
+            // Show modal
+            memberModal.classList.remove('hidden');
+        }
+
+        // Export to CSV
+        function exportToCSV() {
+            const headers = [
+                'First Name', 'Last Name', 'Preferred Name', 'Email', 'Phone',
+                'City', 'State', 'Year', 'Major', 'Gender', 'Building', 'Room',
+                'Has Car', 'Returned Missionary'
+            ];
+            
+            const csvContent = [
+                headers.join(','),
+                ...filteredMembers.map(member => [
+                    member.FirstName,
+                    member.LastName,
+                    member.PreferredName || '',
+                    member.Email,
+                    member.Phone,
+                    member.City,
+                    member.State,
+                    member.Year,
+                    member.Major,
+                    member.Gender,
+                    member.Building,
+                    member.Room,
+                    hasCar(member) ? 'Yes' : 'No',
+                    isReturnedMissionary(member) ? 'Yes' : 'No'
+                ].map(field => `"${field}"`).join(','))
+            ].join('\n');
+            
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `members_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        // Event listeners
+        searchInput.addEventListener('input', filterAndDisplayMembers);
+        genderFilter.addEventListener('change', filterAndDisplayMembers);
+        buildingFilter.addEventListener('change', filterAndDisplayMembers);
+        yearFilter.addEventListener('change', filterAndDisplayMembers);
+        majorFilter.addEventListener('change', filterAndDisplayMembers);
+        sortSelect.addEventListener('change', filterAndDisplayMembers);
+        interestFilter.addEventListener('change', filterAndDisplayMembers);
+
+        document.getElementById('exportBtn').addEventListener('click', exportToCSV);
+        document.getElementById('retryBtn').addEventListener('click', initApp);
+        document.getElementById('closeModal').addEventListener('click', () => {
+            memberModal.classList.add('hidden');
+        });
+
+        // Close modal when clicking outside
+        memberModal.addEventListener('click', (e) => {
+            if (e.target === memberModal) {
+                memberModal.classList.add('hidden');
+            }
+        });
+
+        // Initialize app on load
+        initApp();
+    </script>
+</body>
+</html>
+    <script id="html_badge_script1">
+        window.__genspark_remove_badge_link = "https://www.genspark.ai/api/html_badge/" +
+            "remove_badge?token=To%2FBnjzloZ3UfQdcSaYfDrjTXHT4wb4E7b%2BzMewZ%2BH4cMj9oR6Ol79cIgiTud0fVVDL%2B9aA%2Fk7Z5Qr3yjmLkrUXHgsVo6BkvIgk7Ma3zyr7k4aHYrIJQTwkGEFpOMNbm0rWlwnykP7K44jjDogz5YwhPZO%2BqdGJRhKieEs1YmYZ6rsvff55So24YvvvRgqLcLvtXVTaeDQplQLse9xOqJ%2Fjj7uk1MBL8rMm%2FVXTMsYITdvvaDi3AaYuCOCCNGKv2Mz6IxcDSPShS3cBxv2V4ajeXMOStrHGJko%2FYvvXeBYGH%2B7fXOALEREkvbeJYcXsmlr75eof7Wnhfx8BO18uSiIJ9iHRLb73KrdE4%2FjRL0zggtSjM4ADhxAGR3%2FnuOSM5KZFbV%2Fl%2F1lj2jxuu3ofVRM7SeiUtiqlNaYlURX1OBlcHpWEWN0mt7s%2FZ7yYYwbJXhvzeqeNRhtXLizqNunDOJoRhBjjyTpb7ntTtyAPST3P69AfC7tIQ%2B%2B3dEf1fEKotB5fLO9gHZy9jDJ39cewpUmXY5%2BIQFS8Czw9PJIaHhbk%3D";
+        window.__genspark_locale = "en-US";
+        window.__genspark_token = "To/BnjzloZ3UfQdcSaYfDrjTXHT4wb4E7b+zMewZ+H4cMj9oR6Ol79cIgiTud0fVVDL+9aA/k7Z5Qr3yjmLkrUXHgsVo6BkvIgk7Ma3zyr7k4aHYrIJQTwkGEFpOMNbm0rWlwnykP7K44jjDogz5YwhPZO+qdGJRhKieEs1YmYZ6rsvff55So24YvvvRgqLcLvtXVTaeDQplQLse9xOqJ/jj7uk1MBL8rMm/VXTMsYITdvvaDi3AaYuCOCCNGKv2Mz6IxcDSPShS3cBxv2V4ajeXMOStrHGJko/YvvXeBYGH+7fXOALEREkvbeJYcXsmlr75eof7Wnhfx8BO18uSiIJ9iHRLb73KrdE4/jRL0zggtSjM4ADhxAGR3/nuOSM5KZFbV/l/1lj2jxuu3ofVRM7SeiUtiqlNaYlURX1OBlcHpWEWN0mt7s/Z7yYYwbJXhvzeqeNRhtXLizqNunDOJoRhBjjyTpb7ntTtyAPST3P69AfC7tIQ++3dEf1fEKotB5fLO9gHZy9jDJ39cewpUmXY5+IQFS8Czw9PJIaHhbk=";
+    </script>
+    
+    <script id="html_notice_dialog_script" src="https://www.genspark.ai/notice_dialog.js"></script>
+    
