@@ -57,6 +57,13 @@
             right: 20px;
             z-index: 1000;
         }
+        .new-badge {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -107,6 +114,16 @@
                 <i class="fas fa-exclamation-triangle text-4xl mb-4"></i>
                 <h3 class="text-xl font-bold mb-2">Error Loading Data</h3>
                 <p id="errorMessage" class="mb-4">Failed to fetch member data</p>
+                <details class="mt-4 text-left bg-white p-4 rounded">
+                    <summary class="cursor-pointer font-semibold">Troubleshooting Steps</summary>
+                    <ol class="list-decimal ml-6 mt-2 space-y-2 text-sm">
+                        <li>Verify the Google Apps Script is deployed as a web app</li>
+                        <li>Check that "Who has access" is set to "Anyone" or "Anyone, even anonymous"</li>
+                        <li>Test the API URL directly in your browser</li>
+                        <li>Enable the Debug panel (top right) for detailed error information</li>
+                        <li>Consider implementing a backend proxy (see DEBUG_REPORT.md)</li>
+                    </ol>
+                </details>
             </div>
             <button id="retryBtn" class="bg-red-600 hover:bg-red-700 text-white px-6 py-2 rounded-lg transition duration-200">
                 <i class="fas fa-redo mr-2"></i>Retry
@@ -137,6 +154,8 @@
                             <option value="lastName">Last Name</option>
                             <option value="firstName">First Name</option>
                             <option value="building">Building → Room</option>
+                            <option value="dateNewest">Newest First ⭐</option>
+                            <option value="dateOldest">Oldest First</option>
                         </select>
                     </div>
 
@@ -144,6 +163,37 @@
                     <div class="flex items-end">
                         <div class="text-sm text-gray-600">
                             <span id="resultsCount">0</span> members found
+                            <span id="newMembersCount" class="hidden">
+                                (<span class="text-green-600 font-semibold"><span id="newCount">0</span> new</span>)
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Date Filter Section -->
+                <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                    <div class="flex items-center mb-3">
+                        <i class="fas fa-calendar-alt text-blue-600 mr-2"></i>
+                        <h3 class="text-sm font-semibold text-gray-800">Date Filter - Find New Members</h3>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <!-- Date Added Filter -->
+                        <div>
+                            <label class="block text-xs font-medium text-gray-700 mb-1">Show members added after:</label>
+                            <input type="date" id="dateAfterFilter" 
+                                   class="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:ring-2 focus:ring-blue-500">
+                        </div>
+                        
+                        <!-- Quick Date Presets -->
+                        <div class="md:col-span-2">
+                            <label class="block text-xs font-medium text-gray-700 mb-1">Quick filters:</label>
+                            <div class="flex flex-wrap gap-2">
+                                <button id="quickToday" class="px-3 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded">Today</button>
+                                <button id="quickWeek" class="px-3 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded">Last 7 Days</button>
+                                <button id="quickMonth" class="px-3 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded">Last 30 Days</button>
+                                <button id="quickSemester" class="px-3 py-1 text-xs bg-blue-100 hover:bg-blue-200 text-blue-700 rounded">This Semester</button>
+                                <button id="quickClear" class="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 rounded">Clear Date Filter</button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -221,6 +271,7 @@
                                 <p id="modalLocation" class="text-gray-600"></p>
                                 <p id="modalBuilding" class="text-gray-600"></p>
                                 <p id="modalYearMajor" class="text-gray-600"></p>
+                                <p id="modalTimestamp" class="text-xs text-gray-500 mt-2"></p>
                             </div>
                         </div>
                         <button id="closeModal" class="text-gray-400 hover:text-gray-600 text-2xl">
@@ -292,6 +343,7 @@
                 this.columns = null;
                 this.isLoading = false;
                 this.debug = false;
+                this.dateAfterFilter = null; // Store date filter
                 
                 this.init();
             }
@@ -328,6 +380,19 @@
                 document.getElementById('carFilter').addEventListener('change', () => this.applyFilters());
                 document.getElementById('rmFilter').addEventListener('change', () => this.applyFilters());
 
+                // Date filter
+                document.getElementById('dateAfterFilter').addEventListener('change', (e) => {
+                    this.dateAfterFilter = e.target.value ? new Date(e.target.value) : null;
+                    this.applyFilters();
+                });
+
+                // Quick date filters
+                document.getElementById('quickToday').addEventListener('click', () => this.setQuickDateFilter(0));
+                document.getElementById('quickWeek').addEventListener('click', () => this.setQuickDateFilter(7));
+                document.getElementById('quickMonth').addEventListener('click', () => this.setQuickDateFilter(30));
+                document.getElementById('quickSemester').addEventListener('click', () => this.setSemesterFilter());
+                document.getElementById('quickClear').addEventListener('click', () => this.clearDateFilter());
+
                 // Export
                 document.getElementById('exportBtn').addEventListener('click', () => this.exportCSV());
 
@@ -355,6 +420,40 @@
                         document.getElementById('searchInput').focus();
                     }
                 });
+            }
+
+            setQuickDateFilter(daysAgo) {
+                const date = new Date();
+                date.setDate(date.getDate() - daysAgo);
+                const dateString = date.toISOString().split('T')[0];
+                document.getElementById('dateAfterFilter').value = dateString;
+                this.dateAfterFilter = date;
+                this.applyFilters();
+            }
+
+            setSemesterFilter() {
+                // Assume semester starts in late August or early January
+                const today = new Date();
+                const year = today.getFullYear();
+                const month = today.getMonth(); // 0-11
+                
+                let semesterStart;
+                if (month >= 7) { // August or later - Fall semester
+                    semesterStart = new Date(year, 7, 15); // Aug 15
+                } else { // Before August - Winter semester
+                    semesterStart = new Date(year, 0, 1); // Jan 1
+                }
+                
+                const dateString = semesterStart.toISOString().split('T')[0];
+                document.getElementById('dateAfterFilter').value = dateString;
+                this.dateAfterFilter = semesterStart;
+                this.applyFilters();
+            }
+
+            clearDateFilter() {
+                document.getElementById('dateAfterFilter').value = '';
+                this.dateAfterFilter = null;
+                this.applyFilters();
             }
 
             log(message, type = 'info') {
@@ -390,28 +489,29 @@
 
             async fetchWithFallbacks() {
                 const methods = [
-                    () => this.directFetch(),
-                    () => this.proxyFetch('https://corsproxy.io/?'),
-                    () => this.proxyFetch('https://cors-anywhere.herokuapp.com/'),
-                    () => this.proxyFetch('https://api.allorigins.win/raw?url='),
+                    { name: 'Direct Fetch', fn: () => this.directFetch() },
+                    { name: 'CodeTabs Proxy', fn: () => this.proxyFetch('https://api.codetabs.com/v1/proxy?quest=') },
+                    { name: 'ThingProxy', fn: () => this.proxyFetch('https://thingproxy.freeboard.io/fetch/') },
+                    { name: 'CORS.io Proxy', fn: () => this.proxyFetch('https://corsproxy.io/?') },
+                    { name: 'AllOrigins Proxy', fn: () => this.proxyFetch('https://api.allorigins.win/raw?url=') },
                 ];
 
+                let lastError;
                 for (let i = 0; i < methods.length; i++) {
                     try {
-                        this.log(`Attempting method ${i + 1}/${methods.length}...`);
-                        this.updateLoadingStatus(`Trying connection method ${i + 1}...`);
+                        this.log(`Attempting ${methods[i].name} (${i + 1}/${methods.length})...`);
+                        this.updateLoadingStatus(`Trying ${methods[i].name}...`);
                         
-                        const data = await methods[i]();
-                        this.log(`Method ${i + 1} successful`, 'success');
+                        const data = await methods[i].fn();
+                        this.log(`${methods[i].name} successful! ✓`, 'success');
                         return data;
                     } catch (error) {
-                        this.log(`Method ${i + 1} failed: ${error.message}`, 'error');
-                        
-                        if (i === methods.length - 1) {
-                            throw new Error('All connection methods failed');
-                        }
+                        lastError = error;
+                        this.log(`${methods[i].name} failed: ${error.message}`, 'error');
                     }
                 }
+                
+                throw new Error(`All connection methods failed. Last error: ${lastError?.message || 'Unknown error'}`);
             }
 
             async directFetch() {
@@ -422,6 +522,7 @@
                         'Accept': 'application/json',
                         'Content-Type': 'application/json',
                     },
+                    mode: 'cors',
                     cache: 'no-store'
                 });
                 
@@ -434,13 +535,17 @@
 
             async proxyFetch(proxyUrl) {
                 const url = `${proxyUrl}${encodeURIComponent(this.apiUrl)}&t=${Date.now()}`;
-                const response = await fetch(url);
+                const response = await fetch(url, {
+                    method: 'GET',
+                    cache: 'no-store'
+                });
                 
                 if (!response.ok) {
-                    throw new Error(`Proxy request failed: ${response.status}`);
+                    throw new Error(`Proxy returned status ${response.status}`);
                 }
                 
-                return await response.json();
+                const data = await response.json();
+                return data;
             }
 
             processData(data) {
@@ -456,6 +561,14 @@
 
                 this.members = data.members;
                 this.columns = data.columns;
+                
+                // Parse timestamps for each member
+                this.members.forEach(member => {
+                    const timestampStr = member.fieldsClean?.['Timestamp'];
+                    if (timestampStr) {
+                        member.parsedTimestamp = new Date(timestampStr);
+                    }
+                });
                 
                 // Set updated timestamp
                 if (data.updatedAt) {
@@ -494,6 +607,13 @@
                 select.value = currentValue;
             }
 
+            isNewMember(member, daysThreshold = 7) {
+                if (!member.parsedTimestamp) return false;
+                const daysAgo = new Date();
+                daysAgo.setDate(daysAgo.getDate() - daysThreshold);
+                return member.parsedTimestamp >= daysAgo;
+            }
+
             applyFilters() {
                 const searchTerm = document.getElementById('searchInput').value.toLowerCase();
                 const genderFilter = document.getElementById('genderFilter').value;
@@ -508,6 +628,13 @@
                     // Search filter
                     if (searchTerm && !member.Search?.toLowerCase().includes(searchTerm)) {
                         return false;
+                    }
+
+                    // Date filter - show only members added after specified date
+                    if (this.dateAfterFilter && member.parsedTimestamp) {
+                        if (member.parsedTimestamp < this.dateAfterFilter) {
+                            return false;
+                        }
                     }
 
                     // Other filters
@@ -531,6 +658,11 @@
                     return true;
                 });
 
+                // Count new members (within 7 days)
+                const newMembersInResults = this.filteredMembers.filter(m => this.isNewMember(m, 7)).length;
+                document.getElementById('newCount').textContent = newMembersInResults;
+                document.getElementById('newMembersCount').classList.toggle('hidden', newMembersInResults === 0);
+
                 // Sort
                 this.sortMembers(sortBy);
                 
@@ -551,6 +683,18 @@
                             const buildingCompare = (a.Building || '').localeCompare(b.Building || '');
                             if (buildingCompare !== 0) return buildingCompare;
                             return (a.Room || '').localeCompare(b.Room || '');
+                        case 'dateNewest':
+                            // Newest first (most recent timestamp)
+                            if (!a.parsedTimestamp && !b.parsedTimestamp) return 0;
+                            if (!a.parsedTimestamp) return 1;
+                            if (!b.parsedTimestamp) return -1;
+                            return b.parsedTimestamp - a.parsedTimestamp;
+                        case 'dateOldest':
+                            // Oldest first
+                            if (!a.parsedTimestamp && !b.parsedTimestamp) return 0;
+                            if (!a.parsedTimestamp) return 1;
+                            if (!b.parsedTimestamp) return -1;
+                            return a.parsedTimestamp - b.parsedTimestamp;
                         default: // lastName
                             return a.LastName.localeCompare(b.LastName);
                     }
@@ -571,10 +715,26 @@
             createMemberCard(member) {
                 const hasCar = this.getFieldValue(member, 'Will you have a car while attending school?') === 'Yes';
                 const isRM = this.getFieldValue(member, 'Returned missionary?') === 'Yes';
+                const isNew = this.isNewMember(member, 7);
+                
+                const newBadge = isNew ? `
+                    <div class="absolute top-2 right-2 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded-full shadow-lg new-badge">
+                        NEW
+                    </div>
+                ` : '';
+                
+                const daysAgo = member.parsedTimestamp ? 
+                    Math.floor((Date.now() - member.parsedTimestamp) / (1000 * 60 * 60 * 24)) : null;
+                
+                const addedText = daysAgo !== null ? 
+                    (daysAgo === 0 ? 'Added today' : 
+                     daysAgo === 1 ? 'Added yesterday' : 
+                     `Added ${daysAgo} days ago`) : '';
                 
                 return `
-                    <div class="member-card bg-white rounded-lg shadow-md overflow-hidden cursor-pointer hover:shadow-lg" 
+                    <div class="member-card bg-white rounded-lg shadow-md overflow-hidden cursor-pointer hover:shadow-lg relative" 
                          onclick="app.openMemberDetail('${member.MemberID}')">
+                        ${newBadge}
                         <div class="p-4 text-center">
                             <div class="mb-4 flex justify-center">
                                 <img src="${member.PhotoUrl || 'https://via.placeholder.com/180x180?text=No+Photo'}" 
@@ -587,16 +747,17 @@
                             </h3>
                             <p class="text-sm text-gray-600 mb-1">${member.City}, ${member.State}</p>
                             <p class="text-sm text-gray-600 mb-1">Building ${member.Building} • Room ${member.Room}</p>
-                            <p class="text-sm text-gray-600 mb-3">${member.Year} • ${member.Major}</p>
+                            <p class="text-sm text-gray-600 mb-2">${member.Year} • ${member.Major}</p>
+                            ${addedText ? `<p class="text-xs text-blue-600 font-medium mb-2">${addedText}</p>` : ''}
                             
                             <div class="flex justify-center space-x-4 text-xs">
                                 <div class="flex items-center ${hasCar ? 'text-green-600' : 'text-gray-400'}">
                                     <i class="fas fa-car mr-1"></i>
-                                    <span>Has Car: ${hasCar ? 'Yes' : 'No'}</span>
+                                    <span>${hasCar ? 'Has Car' : 'No Car'}</span>
                                 </div>
                                 <div class="flex items-center ${isRM ? 'text-blue-600' : 'text-gray-400'}">
                                     <i class="fas fa-globe mr-1"></i>
-                                    <span>RM: ${isRM ? 'Yes' : 'No'}</span>
+                                    <span>${isRM ? 'RM' : 'Not RM'}</span>
                                 </div>
                             </div>
                         </div>
@@ -614,6 +775,21 @@
                 document.getElementById('modalLocation').textContent = `${member.City}, ${member.State}`;
                 document.getElementById('modalBuilding').textContent = `Building ${member.Building} • Room ${member.Room}`;
                 document.getElementById('modalYearMajor').textContent = `${member.Year} • ${member.Major}`;
+                
+                // Show timestamp
+                const timestampStr = member.fieldsClean?.['Timestamp'];
+                if (timestampStr && member.parsedTimestamp) {
+                    const formatted = member.parsedTimestamp.toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'long',
+                        day: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                    document.getElementById('modalTimestamp').textContent = `Submitted: ${formatted}`;
+                } else {
+                    document.getElementById('modalTimestamp').textContent = '';
+                }
 
                 // Set contact links
                 document.getElementById('modalCall').href = `tel:${member.Phone}`;
@@ -714,7 +890,7 @@
             exportCSV() {
                 if (this.filteredMembers.length === 0) return;
 
-                const headers = ['Name', 'Email', 'Phone', 'Location', 'Building/Room', 'Year', 'Major', 'Gender', 'Has Car', 'RM Status'];
+                const headers = ['Name', 'Email', 'Phone', 'Location', 'Building/Room', 'Year', 'Major', 'Gender', 'Has Car', 'RM Status', 'Submitted Date'];
                 const rows = this.filteredMembers.map(member => [
                     `${member.PreferredName || member.FirstName} ${member.LastName}`,
                     member.Email,
@@ -725,7 +901,8 @@
                     member.Major,
                     member.Gender,
                     this.getFieldValue(member, 'Will you have a car while attending school?'),
-                    this.getFieldValue(member, 'Returned missionary?')
+                    this.getFieldValue(member, 'Returned missionary?'),
+                    member.parsedTimestamp ? member.parsedTimestamp.toLocaleDateString() : ''
                 ]);
 
                 const csvContent = [headers, ...rows]
@@ -772,12 +949,3 @@
     </script>
 </body>
 </html>
-    <script id="html_badge_script1">
-        window.__genspark_remove_badge_link = "https://www.genspark.ai/api/html_badge/" +
-            "remove_badge?token=To%2FBnjzloZ3UfQdcSaYfDkMNOtWXaQryBUUSgQN%2B%2BmrmRNzcP5eau8lvEtw%2BH905pKYLHkQpEfCyxCRAYHKH2gmJrHBcB8U9AEun3mgSP2uPs6rmbTkoZ54SmN34fNAWg2Dq7LGRMRujhrOaQndOYKMgjm0pujCG4ypde6jSvG5ftWT%2FxPyvx3pJsTpnqeCVci2cEp65HkQlb1kV1sRkuMfmKI0bUc3EwGmH55bEuaSCdI4wsx%2BYXJ7DNoBCAoOUxcwcgXRUODzLv6zMnLkr4xqk7W3IO3fHFnVp5JjYX8B1iHf4xrb7Z6XmTI6NIc8JTw3k0RpjzjIOyLgZfR5ZGGKNekOCInQ3VRsN4JKedlJ9hzEVkny5XMsXWr2drh0DEXlkFh%2BOgw2hcnSljEqiIzziMYzTqXkDZTfx8jOuojpKDxkWX4ycYgEJLnU0IxHszN3tuG0xvDs6vkUbFJmKIYoGR69rkDQ8Ts3HEQ6e%2B9QJHKxJKCoVgpODGi2plBw3he1aEh1p3TROo4PY8QX6vaDrVLqc0cN4RB9GBUBrdnk%3D";
-        window.__genspark_locale = "en-US";
-        window.__genspark_token = "To/BnjzloZ3UfQdcSaYfDkMNOtWXaQryBUUSgQN++mrmRNzcP5eau8lvEtw+H905pKYLHkQpEfCyxCRAYHKH2gmJrHBcB8U9AEun3mgSP2uPs6rmbTkoZ54SmN34fNAWg2Dq7LGRMRujhrOaQndOYKMgjm0pujCG4ypde6jSvG5ftWT/xPyvx3pJsTpnqeCVci2cEp65HkQlb1kV1sRkuMfmKI0bUc3EwGmH55bEuaSCdI4wsx+YXJ7DNoBCAoOUxcwcgXRUODzLv6zMnLkr4xqk7W3IO3fHFnVp5JjYX8B1iHf4xrb7Z6XmTI6NIc8JTw3k0RpjzjIOyLgZfR5ZGGKNekOCInQ3VRsN4JKedlJ9hzEVkny5XMsXWr2drh0DEXlkFh+Ogw2hcnSljEqiIzziMYzTqXkDZTfx8jOuojpKDxkWX4ycYgEJLnU0IxHszN3tuG0xvDs6vkUbFJmKIYoGR69rkDQ8Ts3HEQ6e+9QJHKxJKCoVgpODGi2plBw3he1aEh1p3TROo4PY8QX6vaDrVLqc0cN4RB9GBUBrdnk=";
-    </script>
-    
-    <script id="html_notice_dialog_script" src="https://www.genspark.ai/notice_dialog.js"></script>
-    
